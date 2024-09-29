@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS  
+import re  # Para validação de e-mail
 
 app = Flask(__name__)
 
@@ -43,12 +44,23 @@ def init_db():
         db.create_all()
     return jsonify({"message": "Banco de dados inicializado!"}), 200
 
+# Função para validar e-mail
+def is_valid_email(email):
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(email_regex, email) is not None
+
 # Rota de registro
-@app.route('/register', methods=['POST'])
+@app.route('/users/register', methods=['POST'])
 def register():
     data = request.get_json()
     if 'nome' not in data or 'email' not in data or 'senha' not in data:
         return jsonify({"message": "Dados incompletos!"}), 400
+    
+    if not is_valid_email(data['email']):
+        return jsonify({"message": "E-mail inválido!"}), 400
+
+    if User.query.filter_by(nome=data['nome']).first() or User.query.filter_by(email=data['email']).first():
+        return jsonify({"message": "Nome ou e-mail já estão em uso!"}), 409
 
     hashed_password = generate_password_hash(data['senha'], method='pbkdf2:sha256')
     new_user = User(nome=data['nome'], email=data['email'], senha=hashed_password)
@@ -61,7 +73,7 @@ def register():
         return jsonify({"message": "Erro ao registrar usuário!", "error": str(e)}), 400
 
 # Rota de login
-@app.route('/login', methods=['POST'])
+@app.route('/users/login', methods=['POST'])
 def login():
     data = request.get_json()
     user = User.query.filter_by(nome=data.get('nome')).first()
@@ -72,7 +84,7 @@ def login():
         return jsonify({"message": "Falha no login! Verifique suas credenciais."}), 401
 
 # Rota para obter os detalhes do usuário logado
-@app.route('/user/<string:nome>', methods=['GET'])
+@app.route('/users/<string:nome>', methods=['GET'])
 def get_user_details(nome):
     user = User.query.filter_by(nome=nome).first()
 
@@ -86,7 +98,7 @@ def get_user_details(nome):
         return jsonify({"message": "Usuário não encontrado!"}), 404
 
 # Rota para atualizar os dados do usuário
-@app.route('/user/<string:nome>', methods=['PUT'])
+@app.route('/users/<string:nome>', methods=['PUT'])
 def update_user_details(nome):
     data = request.get_json()
     user = User.query.filter_by(nome=nome).first()
@@ -95,7 +107,10 @@ def update_user_details(nome):
         return jsonify({"message": "Usuário não encontrado!"}), 404
 
     if 'email' in data:
+        if not is_valid_email(data['email']):
+            return jsonify({"message": "E-mail inválido!"}), 400
         user.email = data['email']
+        
     if 'senha' in data:
         user.senha = generate_password_hash(data['senha'], method='pbkdf2:sha256')
 
@@ -123,7 +138,14 @@ def add_comentario():
     try:
         db.session.add(novo_comentario)
         db.session.commit()
-        return jsonify({"message": "Comentário e avaliação adicionados com sucesso!"}), 201
+        return jsonify({
+            "message": "Comentário e avaliação adicionados com sucesso!",
+            "comentario": {
+                "nome": user.nome,
+                "comentario": novo_comentario.comentario,
+                "avaliacao": novo_comentario.avaliacao
+            }
+        }), 201
     except Exception as e:
         return jsonify({"message": "Erro ao adicionar comentário!", "error": str(e)}), 400
 
@@ -145,8 +167,23 @@ def get_comentarios():
         "media_avaliacao": media_avaliacao
     }), 200
 
+# Rota para verificar e-mail
+@app.route('/users/verify-email', methods=['POST'])
+def verify_email():
+    data = request.get_json()
+    
+    if 'email' not in data:
+        return jsonify({"message": "E-mail não fornecido!"}), 400
+
+    user = User.query.filter_by(email=data['email']).first()
+    
+    if user:
+        return jsonify({"message": "E-mail verificado com sucesso!"}), 200
+    else:
+        return jsonify({"message": "E-mail não encontrado!"}), 404
+
 # Rota para deletar usuários
-@app.route('/delete_user/<int:user_id>', methods=['DELETE'])
+@app.route('/users/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
     user = User.query.get(user_id)
 
