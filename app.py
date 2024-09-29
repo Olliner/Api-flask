@@ -71,6 +71,20 @@ def login():
     else:
         return jsonify({"message": "Falha no login! Verifique suas credenciais."}), 401
 
+# Rota para obter os detalhes do usuário logado
+@app.route('/user/<string:nome>', methods=['GET'])
+def get_user_details(nome):
+    user = User.query.filter_by(nome=nome).first()
+
+    if user:
+        return jsonify({
+            "nome": user.nome,
+            "email": user.email,
+            "senha": user.senha  # Se você não quiser retornar a senha, remova essa linha
+        }), 200
+    else:
+        return jsonify({"message": "Usuário não encontrado!"}), 404
+
 # Rota para adicionar comentário e avaliação
 @app.route('/comentarios', methods=['POST'])
 def add_comentario():
