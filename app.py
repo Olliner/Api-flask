@@ -80,10 +80,30 @@ def get_user_details(nome):
         return jsonify({
             "nome": user.nome,
             "email": user.email,
-            "senha": user.senha  # Se você não quiser retornar a senha, remova essa linha
+            # Não retornar a senha
         }), 200
     else:
         return jsonify({"message": "Usuário não encontrado!"}), 404
+
+# Rota para atualizar os dados do usuário
+@app.route('/user/<string:nome>', methods=['PUT'])
+def update_user_details(nome):
+    data = request.get_json()
+    user = User.query.filter_by(nome=nome).first()
+
+    if not user:
+        return jsonify({"message": "Usuário não encontrado!"}), 404
+
+    if 'email' in data:
+        user.email = data['email']
+    if 'senha' in data:
+        user.senha = generate_password_hash(data['senha'], method='pbkdf2:sha256')
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Dados do usuário atualizados com sucesso!"}), 200
+    except Exception as e:
+        return jsonify({"message": "Erro ao atualizar dados do usuário!", "error": str(e)}), 400
 
 # Rota para adicionar comentário e avaliação
 @app.route('/comentarios', methods=['POST'])
