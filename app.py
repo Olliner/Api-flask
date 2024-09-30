@@ -5,6 +5,7 @@ from flask_cors import CORS
 import re  # Para validação de e-mail
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True, resources={r"/login": {"origins": "http://localhost:8100", "allow_headers": "Content-Type"}})
 
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
