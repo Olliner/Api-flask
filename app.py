@@ -7,7 +7,6 @@ import re  # Para validação de e-mail
 app = Flask(__name__)
 CORS(app, supports_credentials=True, resources={r"/login": {"origins": "http://localhost:8100", "allow_headers": "Content-Type"}})
 
-
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -191,6 +190,9 @@ def delete_user(user_id):
         return jsonify({"message": "Usuário não encontrado!"}), 404
 
     try:
+        # Excluindo os comentários do usuário antes de deletá-lo
+        Comentario.query.filter_by(user_id=user.id).delete()
+
         db.session.delete(user)
         db.session.commit()
         return jsonify({"message": "Usuário excluído com sucesso!"}), 200
