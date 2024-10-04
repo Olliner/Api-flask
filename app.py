@@ -2,14 +2,20 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS  
-import re  # Para validação de e-mail
+import re
+import os
+import logging
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, resources={r"/login": {"origins": "http://localhost:8100", "allow_headers": "Content-Type"}})
+CORS(app)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
+# Configuração do banco de dados usando variáveis de ambiente
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///db.sqlite3')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+# Configuração de logging
+logging.basicConfig(level=logging.INFO)
 
 # Modelo User
 class User(db.Model):
@@ -69,6 +75,7 @@ def register():
         db.session.commit()
         return jsonify({"message": "Usuário registrado com sucesso!"}), 201
     except Exception as e:
+        logging.error(f"Erro ao registrar usuário: {str(e)}")
         return jsonify({"message": "Erro ao registrar usuário!", "error": str(e)}), 400
 
 # Rota de login
@@ -91,7 +98,6 @@ def get_user_details(nome):
         return jsonify({
             "nome": user.nome,
             "email": user.email,
-            # Não retornar a senha
         }), 200
     else:
         return jsonify({"message": "Usuário não encontrado!"}), 404
@@ -117,17 +123,24 @@ def update_user_details(nome):
         db.session.commit()
         return jsonify({"message": "Dados do usuário atualizados com sucesso!"}), 200
     except Exception as e:
+        logging.error(f"Erro ao atualizar dados do usuário: {str(e)}")
         return jsonify({"message": "Erro ao atualizar dados do usuário!", "error": str(e)}), 400
 
 # Rota para adicionar comentário e avaliação
 @app.route('/comentarios', methods=['POST'])
 def add_comentario():
     data = request.get_json()
+    if 'nome' not in data or 'comentario' not in data or 'avaliacao' not in data:
+        return jsonify({"message": "Dados incompletos!"}), 400
+
     user = User.query.filter_by(nome=data['nome']).first()
 
     if not user:
         return jsonify({"message": "Usuário não encontrado!"}), 404
     
+    if not (1 <= data['avaliacao'] <= 5):
+        return jsonify({"message": "Avaliação deve ser um número entre 1 e 5!"}), 400
+
     novo_comentario = Comentario(
         user_id=user.id,
         comentario=data['comentario'],
@@ -146,20 +159,21 @@ def add_comentario():
             }
         }), 201
     except Exception as e:
+        logging.error(f"Erro ao adicionar comentário: {str(e)}")
         return jsonify({"message": "Erro ao adicionar comentário!", "error": str(e)}), 400
 
 # Rota para obter comentários e média de avaliações
 @app.route('/comentarios', methods=['GET'])
 def get_comentarios():
     comentarios = Comentario.query.all()
-    avaliacoes_soma = sum([coment.avaliacao for coment in comentarios])
-    media_avaliacao = avaliacoes_soma / len(comentarios) if comentarios else 0
-
     comentarios_lista = [{
         "nome": comentario.user.nome,
         "comentario": comentario.comentario,
         "avaliacao": comentario.avaliacao
     } for comentario in comentarios]
+
+    avaliacoes_soma = sum(comentario.avaliacao for comentario in comentarios)
+    media_avaliacao = avaliacoes_soma / len(comentarios) if comentarios else 0
 
     return jsonify({
         "comentarios": comentarios_lista,
@@ -181,23 +195,46 @@ def verify_email():
     else:
         return jsonify({"message": "E-mail não encontrado!"}), 404
 
-# Rota para deletar usuários
-@app.route('/users/<int:user_id>', methods=['DELETE'])
-def delete_user(user_id):
-    user = User.query.get(user_id)
+# Rota para redefinir senha
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
 
-    if not user:
-        return jsonify({"message": "Usuário não encontrado!"}), 404
+    # Verifica se os dados necessários estão presentes
+    if 'email' not in data or 'nova_senha' not in data or 'confirmacao_senha' not in data:
+        return jsonify({"message": "E-mail ou senhas não fornecidos!"}), 400
 
-    try:
-        # Excluindo os comentários do usuário antes de deletá-lo
-        Comentario.query.filter_by(user_id=user.id).delete()
+    if data['nova_senha'] != data['confirmacao_senha']:
+        return jsonify({"message": "As senhas não coincidem!"}), 400
 
-        db.session.delete(user)
+    # Aqui, verificamos se o e-mail existe no banco de dados
+    user = User.query.filter_by(email=data['email']).first()
+    
+    if user:
+        # Atualiza a senha do usuário
+        hashed_password = generate_password_hash(data['nova_senha'], method='pbkdf2:sha256')
+        user.senha = hashed_password
+
+        try:
+            db.session.commit()
+            return jsonify({"message": "Senha redefinida com sucesso!"}), 200
+        except Exception as e:
+            logging.error(f"Erro ao redefinir senha: {str(e)}")
+            return jsonify({"message": "Erro ao redefinir senha!", "error": str(e)}), 400
+    else:
+        return jsonify({"message": "E-mail não encontrado!"}), 404
+
+# Rota para deletar comentário
+@app.route('/comentarios/<int:id>', methods=['DELETE'])
+def delete_comentario(id):
+    comentario = Comentario.query.get(id)
+    
+    if comentario:
+        db.session.delete(comentario)
         db.session.commit()
-        return jsonify({"message": "Usuário excluído com sucesso!"}), 200
-    except Exception as e:
-        return jsonify({"message": "Erro ao excluir usuário!", "error": str(e)}), 400
+        return jsonify({"message": "Comentário deletado com sucesso!"}), 200
+    else:
+        return jsonify({"message": "Comentário não encontrado!"}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
