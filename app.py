@@ -224,7 +224,7 @@ def reset_password():
     else:
         return jsonify({"message": "E-mail não encontrado!"}), 404
 
-# Rota para deletar comentário
+# Rota para deletar Usuario
 @app.route('/comentarios/<int:id>', methods=['DELETE'])
 def delete_comentario(id):
     comentario = Comentario.query.get(id)
